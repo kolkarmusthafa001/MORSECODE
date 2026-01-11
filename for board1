@@ -1,0 +1,314 @@
+module top_module(
+input clock,	// System clock
+
+input reset,	// Reset signal
+
+input button,	// Button input (active high)
+
+input one_sec_unit,		// Switch input for 1.0s time unit input half_sec_unit,	// Switch input for 0.5s time unit input quarter_sec_unit,			// Switch input for 0.25s time unit
+output letter_done, //Detect when letter is done output [7:0] ascii_char,
+output reg [1:0] led_timer	// Unit time
+
+);
+
+wire [1:0] morse_one, morse_two, morse_three, morse_four, morse_five;
+ 
+
+wire button_clean; //Clean button signal wire clk_out; // Slow clock
+wire [2:0] morse_index;	// Track when symbol is done
+
+// Instantiate the clock divider module
+
+clock_div	c1(clock,	one_sec_unit,	half_sec_unit,	quarter_sec_unit,	reset, clk_out);
+// LED toggle to control unit timer initial begin
+led_timer[0] <= 0;
+
+led_timer[1] <= 1; end
+always @(posedge clk_out) begin if (reset) begin
+led_timer[0] <= 0;
+
+led_timer[1] <= 1; end else begin
+led_timer[0] <= ~led_timer[0];
+ 
+
+led_timer[1] <= ~led_timer[1]; end
+end
+
+// Instantiate the debouncer module debouncer d1(clock, button, button_clean);
+// Instantiate the button to morse module
+
+button_to_morse bm1(clk_out, reset, button_clean, morse_one, morse_two, morse_three, morse_four, morse_five, letter_done, morse_index);
+// Instantiate the morse decoder module
+
+morse_decoder	m2(morse_one,	morse_two,	morse_three,	morse_four, morse_five, letter_done, reset, ascii_char);
+endmodule
+
+module button_to_morse (
+
+input clock,	// System clock
+
+input reset,	// Reset signal
+
+input button,	// Button input
+
+output reg [1:0] morse_one,	// Morse code input 1 output reg [1:0] morse_two,	 // Morse code input 2
+ 
+
+output reg [1:0] morse_three, // Morse code input 3 output reg [1:0] morse_four, // Morse code input 4 output reg [1:0] morse_five,  // Morse code input 5
+output reg letter_done,   // Indicates that the letter is done output reg [2:0] morse_index  // Tracks the current symbol index
+);
+
+// Parameters for time units localparam one_time_unit = 1; localparam three_time_units = 2;
+reg [31:0] inactivity_counter; // Counter for button inactivity duration reg [31:0] counter; // Counter for button press duration
+reg button_prev; // Tracks previous button state for edge detection
+
+reg [1:0] latched_morse [4:0]; // Stores bits for morse code, moves them to morse output when letter is done
+reg latched_done; // Detects when bits are done being stored always @(posedge clock or posedge reset) begin
+if (reset) begin
+ 
+
+// Reset all signals counter <= 0;
+inactivity_counter <= 0; morse_index <= 3'b000;
+{morse_one, morse_two, morse_three, morse_four, morse_five} <= 0; letter_done <= 0;
+button_prev <= 0;
+
+latched_done <= 0;
+
+latched_morse[0] <= 0;
+
+latched_morse[1] <= 0;
+
+latched_morse[2] <= 0;
+
+latched_morse[3] <= 0;
+
+latched_morse[4] <= 0; end else begin
+if (button) begin // Button is pressed
+
+// Reset to process new letter letter_done <= 0;
+ 
+
+latched_done <= 0;
+
+counter <= counter + 1; // Increment counter inactivity_counter <= 0; // Reset inactivity counter
+end else if (!button && button_prev) begin // Button released if (counter >= one_time_unit) begin
+// Determine dot or dash based on press duration if (counter >= three_time_units) begin
+case (morse_index) // Dash
+
+3'b000: latched_morse[0] <= 2'b10; 3'b001: latched_morse[1] <= 2'b10; 3'b010: latched_morse[2] <= 2'b10; 3'b011: latched_morse[3] <= 2'b10; 3'b100: latched_morse[4] <= 2'b10; default begin
+latched_morse[0] <= 2'b00; latched_morse[1] <= 2'b00; latched_morse[2] <= 2'b00;
+latched_morse[3] <= 2'b00; latched_morse[4] <= 2'b00;
+ 
+
+end endcase
+end else begin
+
+case (morse_index) // Dot
+
+3'b000: latched_morse[0] <= 2'b01; 3'b001: latched_morse[1] <= 2'b01; 3'b010: latched_morse[2] <= 2'b01; 3'b011: latched_morse[3] <= 2'b01; 3'b100: latched_morse[4] <= 2'b01; default begin
+latched_morse[0] <= 2'b00; latched_morse[1] <= 2'b00; latched_morse[2] <= 2'b00;
+latched_morse[3] <= 2'b00; latched_morse[4] <= 2'b00; end
+endcase end
+morse_index <= morse_index + 1; // Increment morse_index for the
+next symbol
+ 
+
+end
+
+
+
+if (!button) begin
+
+// Button inactive
+
+inactivity_counter <= inactivity_counter + 1; counter <= 0;
+end
+
+// Detect when letter is done, code is stored in output
+
+if (inactivity_counter >= three_time_units && !latched_done) begin morse_one <= latched_morse[0];
+morse_two <= latched_morse[1]; morse_three <= latched_morse[2]; morse_four <= latched_morse[3]; morse_five <= latched_morse[4]; letter_done <= 1; // Detects finished letter
+latched_done <= 1; // Detects when latching is done
+ 
+
+case (morse_index)
+
+3'b000: begin morse_one <= 2'b00; morse_two <= 2'b00; morse_three
+<= 2'b00; morse_four <= 2'b00; morse_five <= 2'b00; end
+
+3'b001:	begin	morse_two	<=	2'b00;	morse_three	<=	2'b00; morse_four <= 2'b00; morse_five <= 2'b00; end
+3'b010:	begin	morse_three	<=	2'b00;	morse_four	<=	2'b00; morse_five <= 2'b00; end
+3'b011: begin morse_four <= 2'b00; morse_five <= 2'b00; end 3'b100: begin morse_five <= 2'b00; end
+3'b101: begin end default begin
+morse_one <= 2'b00; morse_two <= 2'b00; morse_three <= 2'b00; morse_four <= 2'b00; morse_five <= 2'b00;
+end endcase
+end
+
+if (letter_done) begin morse_index <= 0;
+end
+ 
+
+
+
+button_prev <= button; // Update previous button state end
+end endmodule
+module clock_div(
+
+input clock,		// 100 MHz input clock input one_sec_unit,  // Select 2 Hz clock input half_sec_unit, // Select 4 Hz clock input quarter_sec_unit, // Select 8 Hz clock input reset,	// Reset signal
+output reg clk_out    // Output clock
+
+);
+
+// Parameters for divisors
+
+localparam ONE_SEC_DIV = 50_000_000; // 2 Hz localparam HALF_SEC_DIV = 25_000_000; // 4 Hz localparam QUARTER_SEC_DIV = 12_500_000; // 8 Hz
+ 
+
+localparam DEFAULT_DIV = 100_000_000; // 1 Hz (fallback) reg [31:0] divisor;	// Selected divisor value
+reg [31:0] counter;	// 32-bit counter
+
+// Determine divisor based on inputs always @(*) begin
+// Prioritize inputs to prevent conflicts
+
+if (one_sec_unit && !half_sec_unit && !quarter_sec_unit) divisor = ONE_SEC_DIV; // (1.0s)
+else if (half_sec_unit && !one_sec_unit && !quarter_sec_unit) divisor = HALF_SEC_DIV; // (0.5s)
+else if (quarter_sec_unit && !half_sec_unit && !one_sec_unit) divisor = QUARTER_SEC_DIV; // (0.25a)
+else
+
+divisor = DEFAULT_DIV; // Default: (2s)
+
+end
+
+// Clock divider logic
+
+always @(posedge clock or posedge reset) begin
+ 
+
+if (reset) begin
+
+counter <= 0;	// Reset the counter clk_out <= 0;	// Reset the output clock
+end else begin
+
+if (counter == divisor - 1) begin
+
+counter <= 0;	// Reset the counter
+
+clk_out <= ~clk_out; // Toggle the output clock end else begin
+counter <= counter + 1; // Increment the counter end
+end end
+endmodule
+
+module debouncer (
+
+input wire clock, // 100MHz clock signal input wire button, // Noisy button
+output reg clean	// Clean button
+ 
+
+);
+
+parameter max_count = 1000000; reg [31:0] counter;
+initial begin
+
+counter = 0;
+
+clean = 0; end
+always @(posedge clock) begin if (button == clean) begin
+counter <= 0; end else begin
+if (counter == max_count) begin clean <= button;
+counter <= 0; end else begin
+counter <= counter + 1; end
+ 
+
+end end
+endmodule
+
+module morse_decoder (
+
+input [1:0] morse_one,  // . = 01, - = 10 input [1:0] morse_two,  // . = 01, - = 10 input [1:0] morse_three, // . = 01, - = 10 input [1:0] morse_four, // . = 01, - = 10 input [1:0] morse_five,  // . = 01, - = 10
+input letter_done,  // Detect if letter is done input reset,	// Reset signal
+output reg [7:0] ascii_char // ASCII character output
+
+);
+
+// Register to hold the last valid character reg [7:0] last_valid_char;
+initial begin last_valid_char = "-";
+ 
+
+end
+
+always @(*) begin
+
+// Default: Hold the last valid character ascii_char = last_valid_char;
+if (reset) begin last_valid_char = "-";
+end else if (letter_done) begin
+
+// Start traversal of binary tree
+
+if (morse_one == 2'b01) begin // Dot (E branch) if (morse_two == 2'b01) begin // Dot (I branch)
+if (morse_three == 2'b01) begin // Dot (S branch) if (morse_four == 2'b01) begin // Dot (H branch)
+if (morse_five == 2'b01) begin // Dot ascii_char = 8'b0000_010; // .....
+end else if (morse_five == 2'b10) // Dash ascii_char = 8'b0000_0100; // ....-
+else ascii_char = 8'b0001_0001; // ....
+ 
+
+end else if (morse_four == 2'b10) // Dash ...- if (morse_five == 2'b01) // Dot
+ascii_char = " "; //	(invalid)
+
+else if (morse_five == 2'b10) ascii_char = 8'b0000_0011; // ...--
+else ascii_char = 8'b0001_1111; // ...- else ascii_char = 8'b0001_1100; // ...
+end else if (morse_three == 2'b10) begin // Dash (U branch) if (morse_four == 2'b01)
+ascii_char = 8'b0000_1111; // ..-. else if (morse_four == 2'b10)
+ascii_char = 8'b0000_0010; // ..--- else ascii_char = 8'b0001_1110; // ..-
+end else ascii_char = 8'b0001_0010; // ..
+
+end else if (morse_two == 2'b10) begin // Dash (A branch) .- if (morse_three == 2'b01) begin // Dot (R branch) .-.
+if (morse_four == 2'b01)
+ 
+
+ascii_char = 8'b0001_0101; // .-.. else ascii_char = 8'b0001_1011; // .-.
+end else if (morse_three == 2'b10) begin // Dash (W branch) if (morse_four == 2'b01) ascii_char = 8'b0001_1001; // .--. else if (morse_four == 2'b10)
+if (morse_five == 2'b10)
+
+ascii_char = 8'b0000_0001; // .---- else ascii_char = 8'b0001_0011;
+else ascii_char = 8'b0010_0000; // .-- end else ascii_char = 8'b0000_1010; // .-
+end else ascii_char = 8'b0000_1110; // .
+
+end else if (morse_one == 2'b10) begin // Dash (T branch) if (morse_two == 2'b01) begin // Dot (N branch)
+if (morse_three == 2'b01) begin // Dot (D branch) if (morse_four == 2'b01)
+if (morse_five == 2'b01)
+
+ascii_char = 8'b0000_0110; // -....
+ 
+
+else ascii_char = 8'b0000_1011; // -...
+
+else if (morse_four == 2'b10) ascii_char = 8'b0010_0001; // -..- else ascii_char = 8'b0000_1101; // -..
+end else if (morse_three == 2'b10) begin // Dash (K branch) if (morse_four == 2'b01)
+ascii_char = 8'b0000_1100; // -.-. else if (morse_four == 2'b10)
+ascii_char = 8'b0010_0010; //-.-- else ascii_char = 8'b0001_0100; // -.-
+end else ascii_char = 8'b0001_0111; // -.
+
+end else if (morse_two == 2'b10) begin // Dash (M branch) if (morse_three == 2'b01) begin // Dot (G branch)
+if (morse_four == 2'b01)
+
+if (morse_five == 2'b01)
+
+ascii_char = 8'b0000_0111; // --... else ascii_char = 8'b0010_0011; // --..
+else if (morse_four == 2'b10)
+ 
+
+ascii_char = 8'b0001_1010; // --... else ascii_char = 8'b0001_0000; // --.
+end else if (morse_three == 2'b10) begin // Dash (O branch) if (morse_four == 2'b01) begin
+if (morse_five == 2'b01)
+
+ascii_char = 8'b0000_1000; // ---.. else if (morse_five == 2'b10)
+ascii_char = 8'b0000_1000; //(invalid) else ascii_char = " "; //(invalid) ---.
+end else if (morse_four == 2'b10) begin if (morse_five == 2'b10)
+ascii_char = 8'b00000000; // ----- else ascii_char = 8'b0000_1001; // ----.
+end else ascii_char = 8'b0001_1000; // --- end else ascii_char = 8'b0001_0110; // --
+end else ascii_char = 8'b0001_1101; // - end
+ 
+
+// Update the last valid character when a new letter is done last_valid_char = ascii_char;
+end end
+endmodule
